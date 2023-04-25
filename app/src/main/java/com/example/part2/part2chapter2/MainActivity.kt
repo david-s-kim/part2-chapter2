@@ -4,6 +4,7 @@ package com.example.part2.part2chapter2
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
+import android.media.MediaPlayer
 import android.media.MediaRecorder
 import android.net.Uri
 import androidx.appcompat.app.AppCompatActivity
@@ -16,7 +17,7 @@ import androidx.core.content.ContextCompat
 import com.example.part2.part2chapter2.databinding.ActivityMainBinding
 import java.io.IOException
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), OnTimerTickListener {
 
     companion object {
         private const val REQUEST_RECORD_AUDIO_CODE = 200
@@ -28,8 +29,12 @@ class MainActivity : AppCompatActivity() {
         RELEASE, RECORDING, PLAYING
     }
 
+    // 복습
+    private lateinit var timer: Timer
+
     private lateinit var binding: ActivityMainBinding
     private var recorder: MediaRecorder? = null
+    private var player: MediaPlayer? = null
     private var fileName: String = ""
     private var state: State = State.RELEASE
 
@@ -39,6 +44,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         fileName = "${externalCacheDir?.absolutePath}/audiorecordtest.3gp"
+        timer = Timer(this)
 
         binding.recordButton.setOnClickListener {
 
@@ -64,14 +70,12 @@ class MainActivity : AppCompatActivity() {
                 android.Manifest.permission.RECORD_AUDIO
             ) == PackageManager.PERMISSION_GRANTED -> {
                 onRecord(true)
-
             }
             ActivityCompat.shouldShowRequestPermissionRationale(
                 this,
                 android.Manifest.permission.RECORD_AUDIO
             ) -> {
                 showPermissionRationalDialog()
-
             }
             else -> {
                 // You can directly ask for the permission.
@@ -84,11 +88,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun onRecord(start: Boolean) = if (start) {
+    private fun onRecord(start: Boolean) =
+        if (start) {
         startRecording()
     } else {
         stopRecording()
     }
+
+    private fun onPlay(start: Boolean) =
+        if (start) {
+            startPlaying()
+        } else {
+            stopPlaying()
+        }
+
+
 
     private fun startRecording() {
         state = State.RECORDING
@@ -106,6 +120,9 @@ class MainActivity : AppCompatActivity() {
             }
             start()
         }
+
+        binding.waveformView.clearDate()
+        timer.start()
 
         binding.recordButton.setImageDrawable(
             ContextCompat.getDrawable(
@@ -126,6 +143,9 @@ class MainActivity : AppCompatActivity() {
             release()
         }
         recorder = null
+
+        timer.stop()
+
         state = State.RELEASE
 
         binding.recordButton.setImageDrawable(
@@ -140,6 +160,44 @@ class MainActivity : AppCompatActivity() {
         binding.playButton.alpha = 1.0f
     }
 
+    private fun startPlaying() {
+        state = State.PLAYING
+
+        player = MediaPlayer().apply {
+            try {
+                setDataSource(fileName)
+                prepare()
+            } catch (e: IOException) {
+                Log.e("APP", "media player prepare fail $e")
+            }
+            start()
+        }
+
+        timer.stop()
+
+        binding.waveformView.clearWave()
+        timer.start()
+
+        player?.setOnCompletionListener {
+            stopPlaying()
+        }
+
+        binding.recordButton.isEnabled = false
+        binding.recordButton.alpha = 0.3f
+    }
+
+    private fun stopPlaying() {
+        state = State.RELEASE
+
+        player?.release()
+        player = null
+
+        timer.stop()
+
+        binding.recordButton.isEnabled = true
+        binding.recordButton.alpha = 1.0f
+
+    }
 
     private fun showPermissionRationalDialog() {
         AlertDialog.Builder(this)
@@ -193,6 +251,21 @@ class MainActivity : AppCompatActivity() {
             } else {
                 showPermissionSettingDialog()
             }
+        }
+    }
+
+    // 복습
+    override fun onTick(duration: Long) {
+        val millisecond = duration % 1000
+        val second = (duration / 1000 ) % 60
+        val minute = (duration / 1000 / 60)
+
+        binding.timerTextView.text = String.format("%02d:%02d.%02d", minute, second, millisecond / 10)
+
+        if(state == State.PLAYING) {
+            binding.waveformView.replayAmplitude(duration.toInt())
+        } else if (state == State.RECORDING){
+            binding.waveformView.addAmplitude(recorder?.maxAmplitude?.toFloat() ?: 0f)
         }
     }
 }
